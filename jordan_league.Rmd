@@ -1,0 +1,915 @@
+---
+title: "Jordan League Professional Analysis"
+author: "Data Visualization Expert"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  word_document:
+    toc: true
+    toc_depth: '3'
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+  html_document:
+    theme: cosmo
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+    code_folding: hide
+    df_print: paged
+    fig_caption: true
+    number_sections: false
+    css: custom.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, 
+  warning = FALSE, 
+  message = FALSE, 
+  fig.width = 10, 
+  fig.height = 7,
+  fig.align = "center",
+  out.width = "100%",
+  dev = "svg"
+)
+
+# Load required libraries
+library(tidyverse)
+library(plotly)
+library(viridis)
+library(hrbrthemes)
+library(corrplot)
+library(ggrepel)
+library(treemapify)
+library(sf)
+library(scales)
+library(kableExtra)
+library(patchwork)
+library(readr)
+library(tinytex)
+
+# Check if tinytex is installed and install if needed
+if (!tinytex::is_tinytex()) {
+  tinytex::install_tinytex()
+}
+
+# Read data from CSV files
+stadiums <- read_csv("stadiums.csv")
+standings <- read_csv("standings.csv")
+team_stats <- read_csv("team_stats.csv")
+top_scorers <- read_csv("top_scorers.csv")
+
+# Create custom team colors based on flags
+team_colors <- c(
+  "Al Hussein" = "#FFD700",  
+  "Al Wehdat" = "#008000",   
+  "Al Ramtha" = "#0066CC",   
+  "Al Faisaly" = "#1E90FF",  
+  "Al Jazeera" = "#FF0000",  
+  "Al Salt" = "#800000",     
+  "Shabab Al Ordon" = "#DC143C", 
+  "Al Ahli" = "#333333",    
+  "Shabab Al Aqaba" = "#0000FF",
+  "Ma an" = "#FFA500",       
+  "Al Sareeh" = "#0099CC",   
+  "Moghayer Al Sarhan" = "#008080" 
+)
+
+# Create a custom theme for all plots
+theme_jordan <- function() {
+  theme_minimal() +
+    theme(
+      # Text elements
+      text = element_text(family = "sans"),
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5, color = "#333333"),
+      plot.subtitle = element_text(size = 14, color = "#666666", hjust = 0.5),
+      plot.caption = element_text(size = 10, color = "#999999", hjust = 0),
+      axis.title = element_text(size = 12, face = "bold", color = "#333333"),
+      axis.text = element_text(size = 10, color = "#666666"),
+      legend.title = element_text(size = 12, face = "bold", color = "#333333"),
+      legend.text = element_text(size = 10, color = "#666666"),
+      
+      # Legend
+      legend.position = "right",
+      legend.key.size = unit(1.5, "lines"),
+      legend.background = element_rect(fill = "white", color = "gray80"),
+      
+      # Panel and grid
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.grid.major = element_line(color = "#F0F0F0", linewidth = 0.5),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(),
+      
+      # Plot margins
+      plot.margin = margin(20, 20, 20, 20),
+      plot.background = element_rect(fill = "white", color = NA),
+      
+      # Facet
+      strip.background = element_rect(fill = "#F5F5F5", color = "gray80"),
+      strip.text = element_text(size = 12, face = "bold", color = "#333333")
+    )
+}
+
+# Standardize team names across datasets
+stadiums$Team <- gsub("-", " ", stadiums$Team)
+standings$Team <- gsub("-", " ", standings$Team)
+top_scorers$Team <- gsub("-", " ", top_scorers$Team)
+team_stats$Team <- gsub("-", " ", team_stats$Team)
+```
+
+## League Performance Overview
+
+### Team Performance Analysis: Comprehensive Metrics Comparison
+
+```{r performance-analysis, fig.width=12, fig.height=10}
+# Create a normalized dataset for visualization
+performance_data <- standings %>%
+  select(Team, Goals_Scored, Goals_Conceded, Points, Wins, Draws) %>%
+  arrange(desc(Points)) %>%
+  mutate(
+    Win_Rate = (Wins/max(standings$Matches_Played))*100,
+    Goals_Scored = Goals_Scored/max(Goals_Scored)*100,
+    Goals_Conceded = (1 - Goals_Conceded/max(Goals_Conceded))*100, # Invert for better visualization
+    Points = Points/max(Points)*100,
+    Draws = Draws/max(Draws)*100
+  ) %>%
+  head(6) # Focus on top 6 teams
+
+# Create a bar chart for each metric
+p1 <- ggplot(performance_data, aes(x = reorder(Team, Points), y = Points, fill = Team)) +
+  geom_col(width = 0.7, alpha = 0.8) +
+  geom_text(aes(label = paste0(round(Points), "%")), 
+            hjust = -0.2, size = 3.5) +
+  scale_fill_manual(values = team_colors[performance_data$Team]) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), 
+                    expand = expansion(mult = c(0, 0.1))) + # Add space for labels
+  theme_jordan() +
+  labs(
+    title = "Points Distribution",
+    x = "Team",
+    y = "Normalized Points"
+  ) +
+  coord_flip()
+
+p2 <- ggplot(performance_data, aes(x = reorder(Team, Goals_Scored), y = Goals_Scored, fill = Team)) +
+  geom_col(width = 0.7, alpha = 0.8) +
+  geom_text(aes(label = paste0(round(Goals_Scored), "%")), 
+            hjust = -0.2, size = 3.5) +
+  scale_fill_manual(values = team_colors[performance_data$Team]) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                    expand = expansion(mult = c(0, 0.1))) + # Add space for labels
+  theme_jordan() +
+  labs(
+    title = "Goals Scored",
+    x = "Team",
+    y = "Normalized Goals Scored"
+  ) +
+  coord_flip()
+
+p3 <- ggplot(performance_data, aes(x = reorder(Team, Goals_Conceded), y = Goals_Conceded, fill = Team)) +
+  geom_col(width = 0.7, alpha = 0.8) +
+  geom_text(aes(label = paste0(round(Goals_Conceded), "%")), 
+            hjust = -0.2, size = 3.5) +
+  scale_fill_manual(values = team_colors[performance_data$Team]) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                    expand = expansion(mult = c(0, 0.1))) + # Add space for labels
+  theme_jordan() +
+  labs(
+    title = "Defensive Performance",
+    x = "Team",
+    y = "Normalized Defensive Rating",
+    caption = "Note: Higher values indicate better defensive performance"
+  ) +
+  coord_flip()
+
+# Combine the plots
+(p1 + p2 + p3) + 
+  plot_layout(ncol = 1, heights = c(1, 1, 1.2)) +
+  plot_annotation(
+    title = "Top 6 Teams Performance Analysis",
+    subtitle = "Comparing normalized metrics across key performance indicators",
+    theme = theme(
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5, color = "#333333"),
+      plot.subtitle = element_text(size = 14, color = "#666666", hjust = 0.5)
+    )
+  )
+```
+
+### Points vs Performance Metrics: What Drives Success?
+
+```{r success-factors, fig.width=12, fig.height=8}
+# Calculate correlation matrix for performance metrics
+perf_metrics <- standings %>%
+  select(Wins, Draws, Losses, Goals_Scored, Goals_Conceded, Goal_Difference, Points)
+
+# Create a scatter plot matrix showing relationships between key performance indicators
+standings_enriched <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Win_Rate = Wins / Matches_Played * 100,
+    Goals_Per_Match = Goals_Scored / Matches_Played,
+    Defense_Rating = (Clean_Sheets / Matches_Played) * 100
+  )
+
+# Create a combined visualization
+p1 <- ggplot(standings_enriched, aes(x = Goals_Per_Match, y = Win_Rate, size = Points, color = Team)) +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(3, 12)) +
+  theme_jordan() +
+  labs(
+    title = "Goals per Match vs Win Rate",
+    x = "Goals Per Match",
+    y = "Win Rate (%)",
+    size = "Points"
+  ) +
+  theme(legend.position = "none")
+
+p2 <- ggplot(standings_enriched, aes(x = Defense_Rating, y = Win_Rate, size = Points, color = Team)) +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(3, 12)) +
+  theme_jordan() +
+  labs(
+    title = "Clean Sheet Percentage vs Win Rate",
+    x = "Clean Sheet Percentage",
+    y = "Win Rate (%)",
+    size = "Points"
+  ) +
+  theme(legend.position = "right")
+
+# Combine the plots
+(p1 + p2) + 
+  plot_annotation(
+    title = "Attacking vs. Defensive Contributions to Team Success",
+    subtitle = "Analyzing the relationship between performance metrics and winning games",
+    theme = theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12)
+    )
+  )
+```
+
+## Stadium Analysis: Impact of Infrastructure on Team Performance
+
+```{r stadium-performance, fig.width=12, fig.height=8}
+# Join stadium data with team performance data
+stadium_analysis <- stadiums %>%
+  left_join(standings, by = "Team") %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Home_Advantage_Score = (Points / Matches_Played) * (Clean_Sheets / Matches_Played) * 10,
+    Points_Per_Match = Points / Matches_Played
+  )
+
+# Count teams per location
+location_counts <- stadium_analysis %>%
+  count(Location) %>%
+  arrange(desc(n))
+
+# Calculate average points per location
+location_performance <- stadium_analysis %>%
+  group_by(Location) %>%
+  summarize(
+    Avg_Points_Per_Match = mean(Points_Per_Match, na.rm = TRUE),
+    Avg_Capacity = mean(Capacity, na.rm = TRUE),
+    Teams = n(),
+    Total_Capacity = sum(Capacity)
+  ) %>%
+  arrange(desc(Avg_Points_Per_Match))
+
+# Create a treemap visualization for stadium distribution by location
+
+custom_colors <- c(
+  "Al-Salt" = "#9467bd",
+  "Amman"   = "#1f77b4",
+  "Aqaba"   = "#d62728",
+  "Irbid"   = "#ff7f0e",
+  "Ma'an"   = "#8c564b",
+  "Mafraq"  = "#2ca02c"
+)
+
+ggplot(stadium_analysis, aes(area = Capacity, fill = Location, subgroup = Location, 
+                            label = paste(Team, "\n", Capacity))) +
+  geom_treemap() +
+  geom_treemap_subgroup_border(color = "white", size = 2) +
+  geom_treemap_text(color = "white", place = "center", grow = FALSE) +
+  scale_fill_manual(values = custom_colors) +
+  labs(
+    title = "Stadium Distribution Across Jordan",
+    subtitle = "Size represents stadium capacity, showing geographic concentration of football infrastructure"
+  ) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  )
+```
+
+## Geographic Performance Distribution
+
+```{r geo-performance, fig.width=12, fig.height=9}
+# Create a data frame with city coordinates
+city_coords <- data.frame(
+  Location = c("Amman", "Irbid", "Aqaba", "Al-Salt", "Ma'an", "Mafraq"),
+  lat = c(31.9454, 32.5568, 29.5319, 32.0392, 30.1920, 32.3417),
+  lon = c(35.9284, 35.8479, 35.0061, 35.7272, 35.7345, 36.2020)
+)
+
+# Join the coordinates with performance data
+geo_data <- stadium_analysis %>%
+  left_join(city_coords, by = "Location") %>%
+  mutate(
+    Performance_Level = cut(Points_Per_Match,
+                          breaks = c(-Inf, 1, 1.5, 2, Inf),
+                          labels = c("Low", "Medium", "High", "Very High"),
+                          include.lowest = TRUE)
+  )
+
+# Create a simple map of Jordan
+jordan_map <- ggplot() +
+  # Base map
+  geom_sf(data = st_as_sf(map_data("world"), 
+                         coords = c("long", "lat"), 
+                         crs = 4326) %>%
+            filter(region == "Jordan"), 
+          fill = "lightgray", color = "gray50") +
+  
+  # Add city points with performance indicators
+  geom_point(data = geo_data, 
+             aes(x = lon, y = lat, 
+                 size = Points_Per_Match, 
+                 color = Performance_Level),
+             alpha = 0.8) +
+  
+  # Add city labels
+  geom_text(data = city_coords,
+            aes(x = lon, y = lat, label = Location),
+            size = 5, fontface = "bold", color = "gray30",
+            nudge_y = 0.1) +
+  
+  # Customize the appearance
+  scale_size_continuous(range = c(4, 12),
+                       breaks = seq(1, 3, by = 0.5),
+                       labels = paste0(seq(1, 3, by = 0.5), " PPM")) +
+  scale_color_manual(values = c("Low" = "#ff9999",
+                              "Medium" = "#ffcc99",
+                              "High" = "#99ff99",
+                              "Very High" = "#66cc66")) +
+  theme_jordan() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  ) +
+  labs(
+    title = "Geographic Distribution of Team Performance",
+    subtitle = "Point size represents points per match (PPM)\nColor indicates performance level",
+    x = "",
+    y = "",
+    size = "Points Per\nMatch",
+    color = "Performance\nLevel"
+  ) +
+  coord_sf(xlim = c(34.5, 39.5), ylim = c(29, 33)) # Focus on Jordan
+
+# Add a performance summary by city
+city_summary <- geo_data %>%
+  group_by(Location) %>%
+  summarise(
+    Teams = n(),
+    Avg_Points_Per_Match = mean(Points_Per_Match),
+    Total_Capacity = sum(Capacity)
+  ) %>%
+  arrange(desc(Avg_Points_Per_Match)) %>%
+  mutate(
+    Avg_Points_Per_Match = round(Avg_Points_Per_Match, 2),
+    Total_Capacity = format(Total_Capacity, big.mark = ",")
+  ) %>%
+  kable(format = "html",
+        col.names = c("City", "Teams", "Avg PPM", "Total Capacity"),
+        caption = "City Performance Summary") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = FALSE,
+                position = "left")
+
+# Display the map and summary
+jordan_map
+```
+
+## Team Performance Quadrant Analysis
+
+```{r team-quadrants, fig.width=12, fig.height=9}
+# Create enriched data for quadrant analysis
+quadrant_data <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Offensive_Rating = Goals_Scored / Matches_Played,
+    Defensive_Rating = Goals_Conceded / Matches_Played,
+    Discipline_Rating = (Yellow_Cards + Red_Cards * 3) / Matches_Played,
+    Set_Piece_Rating = Corners_Per_Match
+  )
+
+# Calculate median values for quadrant separation
+median_offense <- median(quadrant_data$Offensive_Rating)
+median_defense <- median(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played)
+
+# Create quadrant visualization for team style analysis
+ggplot(quadrant_data, aes(x = Offensive_Rating, y = Clean_Sheets / Matches_Played, 
+                         size = Points, color = Team)) +
+  # Add quadrant background colors
+  annotate("rect", 
+           xmin = min(quadrant_data$Offensive_Rating), 
+           xmax = median_offense,
+           ymin = median_defense, 
+           ymax = max(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played),
+           fill = "#e6f3ff", alpha = 0.3) + # Defensive Teams
+  annotate("rect", 
+           xmin = median_offense, 
+           xmax = max(quadrant_data$Offensive_Rating),
+           ymin = median_defense, 
+           ymax = max(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played),
+           fill = "#e6ffe6", alpha = 0.3) + # Complete Teams
+  annotate("rect", 
+           xmin = min(quadrant_data$Offensive_Rating), 
+           xmax = median_offense,
+           ymin = min(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played), 
+           ymax = median_defense,
+           fill = "#ffe6e6", alpha = 0.3) + # Struggling Teams
+  annotate("rect", 
+           xmin = median_offense, 
+           xmax = max(quadrant_data$Offensive_Rating),
+           ymin = min(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played), 
+           ymax = median_defense,
+           fill = "#fff2e6", alpha = 0.3) + # Attacking Teams
+  
+  # Add team points
+  geom_point(alpha = 0.8) +
+  
+  # Add quadrant lines
+  geom_vline(xintercept = median_offense, 
+             linetype = "dashed", 
+             color = "gray50",
+             size = 1) +
+  geom_hline(yintercept = median_defense, 
+             linetype = "dashed", 
+             color = "gray50",
+             size = 1) +
+  
+  # Add quadrant labels with better positioning
+  annotate("text", 
+           x = (min(quadrant_data$Offensive_Rating) + median_offense) / 2, 
+           y = (median_defense + max(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played)) / 2,
+           label = "Defensive Teams", 
+           size = 5, 
+           fontface = "bold",
+           color = "#0066cc") +
+  annotate("text", 
+           x = (median_offense + max(quadrant_data$Offensive_Rating)) / 2, 
+           y = (median_defense + max(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played)) / 2,
+           label = "Complete Teams", 
+           size = 5, 
+           fontface = "bold",
+           color = "#006600") +
+  annotate("text", 
+           x = (min(quadrant_data$Offensive_Rating) + median_offense) / 2, 
+           y = min(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played) * 1.1, # Adjusted y position
+           label = "Struggling Teams", 
+           size = 5, 
+           fontface = "bold",
+           color = "#cc0000") +
+  annotate("text", 
+           x = (median_offense + max(quadrant_data$Offensive_Rating)) / 2, 
+           y = (min(quadrant_data$Clean_Sheets / quadrant_data$Matches_Played) + median_defense) / 2,
+           label = "Attacking Teams", 
+           size = 5, 
+           fontface = "bold",
+           color = "#cc6600") +
+  
+  # Customize the appearance
+  scale_size_continuous(range = c(3, 12)) +
+  scale_color_manual(values = team_colors) +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(
+    title = "Team Playing Style Quadrant Analysis",
+    subtitle = "Identifying team playing styles based on offensive output and defensive solidity",
+    x = "Goals Scored Per Match",
+    y = "Clean Sheets Per Match",
+    size = "Points",
+    color = "Team"
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1)))
+```
+
+## Performance Trajectory: Win Rate vs. Goal Difference
+
+```{r performance-trajectory, fig.width=12, fig.height=8}
+# Calculate performance metrics and create trajectory plot
+trajectory_data <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Win_Rate = Wins / Matches_Played * 100,
+    Goal_Difference_Per_Match = Goal_Difference / Matches_Played,
+    Points_Per_Match = Points / Matches_Played,
+    Performance_Score = (Win_Rate * 0.4) + (Goal_Difference_Per_Match * 0.6) # Weighted performance metric
+  )
+
+# Create a bubble plot with performance quadrants
+ggplot(trajectory_data, aes(x = Goal_Difference_Per_Match, y = Win_Rate, 
+                           size = Points_Per_Match, color = Team)) +
+  geom_point(alpha = 0.8) +
+  
+  # Add quadrant lines
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_hline(yintercept = mean(trajectory_data$Win_Rate), linetype = "dashed", color = "gray50") +
+  
+  # Add quadrant labels
+  annotate("text", x = min(trajectory_data$Goal_Difference_Per_Match) * 0.8, 
+           y = max(trajectory_data$Win_Rate) * 0.9, 
+           label = "High Win Rate\nPoor Goal Difference", 
+           size = 4, color = "gray40") +
+  annotate("text", x = max(trajectory_data$Goal_Difference_Per_Match) * 0.8, 
+           y = max(trajectory_data$Win_Rate) * 0.9, 
+           label = "High Win Rate\nStrong Goal Difference", 
+           size = 4, color = "gray40") +
+  annotate("text", x = min(trajectory_data$Goal_Difference_Per_Match) * 0.8, 
+           y = min(trajectory_data$Win_Rate) * 1.1, 
+           label = "Low Win Rate\nPoor Goal Difference", 
+           size = 4, color = "gray40") +
+  annotate("text", x = max(trajectory_data$Goal_Difference_Per_Match) * 0.8, 
+           y = min(trajectory_data$Win_Rate) * 1.1, 
+           label = "Low Win Rate\nStrong Goal Difference", 
+           size = 4, color = "gray40") +
+  
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(4, 12), 
+                       breaks = seq(1, 3, by = 0.5),
+                       labels = paste0(seq(1, 3, by = 0.5), " PPM")) +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    legend.box.margin = margin(0, 0, 0, 20) # Add margin to legend
+  ) +
+  labs(
+    title = "Team Performance Analysis: Win Rate vs. Goal Difference",
+    subtitle = "Bubble size represents points per match (PPM)",
+    x = "Goal Difference Per Match",
+    y = "Win Rate (%)",
+    size = "Points Per\nMatch",
+    color = "Team"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+  scale_x_continuous(expand = expansion(mult = c(0.1, 0.1)))
+```
+
+## Goal Scoring Patterns and Team Efficiency
+
+```{r scoring-efficiency, fig.width=12, fig.height=8}
+# Calculate shot efficiency metrics
+efficiency_data <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Shots_Approx = Total_Corners * 2.5, # Approximate shots from corners
+    Shot_Efficiency = Goals_Scored / Shots_Approx * 100,
+    Goal_Impact = Goals_Scored / Points
+  ) %>%
+  arrange(desc(Shot_Efficiency))
+
+# Create a dual-axis chart showing scoring efficiency
+p <- ggplot(efficiency_data) +
+  geom_col(aes(x = reorder(Team, Shot_Efficiency), y = Shot_Efficiency, 
+               fill = Shot_Efficiency), alpha = 0.8) +
+  geom_point(aes(x = reorder(Team, Shot_Efficiency), y = Goal_Impact * 20), 
+             color = "darkred", size = 3) +
+  scale_y_continuous(
+    name = "Shot Efficiency (%)",
+    sec.axis = sec_axis(~ . / 20, name = "Goals needed per point")
+  ) +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Team Scoring Efficiency Analysis",
+    subtitle = "Shot efficiency (bars) vs. Goals needed per point (dots)",
+    x = "Team"
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+
+p
+```
+
+## Player Contribution Analysis
+
+```{r top-scorers-analysis, fig.width=12, fig.height=9}
+# Join top scorers with team standings
+scorer_impact <- top_scorers %>%
+  left_join(standings, by = "Team") %>%
+  mutate(
+    Goal_Contribution = (Goals / Goals_Scored) * 100,
+    Point_Contribution = (Goals / Points) * 10
+  ) %>%
+  arrange(Goal_Contribution) # Sort by goal contribution in ascending order
+
+# Create a lollipop chart for player goal contributions
+ggplot(scorer_impact, aes(x = reorder(Player_Name, Goal_Contribution), y = Goal_Contribution)) +
+  geom_segment(aes(xend = Player_Name, yend = 0, color = Team), 
+               linewidth = 1.2, alpha = 0.7) +
+  geom_point(aes(color = Team, size = Goals), alpha = 0.8) +
+  geom_text(aes(label = paste0(round(Goal_Contribution, 1), "%")), 
+            hjust = -0.3, size = 3.5) +
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(3, 8)) +
+  coord_flip() +
+  theme_jordan() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size = 9)
+  ) +
+  labs(
+    title = "Player Goal Contribution to Team Performance",
+    subtitle = "Percentage of team's total goals scored by individual players",
+    y = "Goal Contribution (%)",
+    size = "Goals Scored"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) # Add space for labels
+
+# Add a secondary visualization showing top scorer breakdown
+top_scorer_breakdown <- top_scorers %>%
+  left_join(standings, by = "Team") %>%
+  group_by(Team) %>%
+  mutate(
+    Goal_Percentage = (Goals / Goals_Scored) * 100
+  ) %>%
+  filter(Goal_Percentage >= 10) %>%
+  arrange(Goal_Percentage) # Sort by goal percentage in ascending order
+
+# Create a horizontal bar chart for individual contribution
+ggplot(top_scorer_breakdown %>% head(5), aes(x = reorder(paste(Player_Name, " (", Team, ")", sep = ""), Goal_Percentage), 
+                                y = Goal_Percentage, fill = Team)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = team_colors) +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.y = element_blank(),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(
+    title = "Top 5 Players by Goal Contribution",
+    subtitle = "Players contributing at least 10% of their team's total goals",
+    y = "Percentage of Team's Total Goals (%)",
+    fill = "Team"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) # Add space for labels
+```
+
+## Team Efficiency Analysis
+
+```{r efficiency-analysis, fig.width=12, fig.height=9}
+# Create efficiency ratings for teams
+efficiency_ratings <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Offensive_Efficiency = Goals_Scored / Total_Corners,
+    Defensive_Efficiency = Clean_Sheets / Matches_Played,
+    Overall_Efficiency = (Points / (Matches_Played * 3)) * 100
+  ) %>%
+  arrange(desc(Overall_Efficiency))
+
+# Create a horizontal bar chart with multiple metrics
+efficiency_long <- efficiency_ratings %>%
+  select(Team, Offensive_Efficiency, Defensive_Efficiency, Overall_Efficiency) %>%
+  pivot_longer(cols = c(Offensive_Efficiency, Defensive_Efficiency, Overall_Efficiency),
+               names_to = "Efficiency_Type", values_to = "Value") %>%
+  mutate(
+    Efficiency_Type = factor(Efficiency_Type, 
+                            levels = c("Overall_Efficiency", "Offensive_Efficiency", "Defensive_Efficiency"),
+                            labels = c("Overall Efficiency (%)", "Goals per Corner", "Clean Sheet Rate"))
+  )
+
+# Create the horizontal bar chart
+ggplot(efficiency_long, aes(x = reorder(Team, Value), y = Value, fill = Efficiency_Type)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  facet_wrap(~Efficiency_Type, scales = "free_x") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.title.y = element_blank()
+  ) +
+  labs(
+    title = "Multi-dimensional Team Efficiency Analysis",
+    subtitle = "Comparing teams across different efficiency metrics",
+    y = "Efficiency Value"
+  )
+```
+
+## Disciplinary Analysis
+
+### Disciplinary Patterns by Location
+
+```{r disciplinary-location, fig.width=12, fig.height=8}
+# Create disciplinary data by location
+disciplinary_data <- team_stats %>%
+  left_join(stadiums, by = "Team") %>%
+  left_join(standings, by = "Team") %>%
+  group_by(Location) %>%
+  summarise(
+    Yellow_Cards_Per_Match = sum(Yellow_Cards) / sum(Matches_Played),
+    Red_Cards_Per_Match = sum(Red_Cards) / sum(Matches_Played),
+    Total_Cards_Per_Match = (sum(Yellow_Cards) + sum(Red_Cards) * 3) / sum(Matches_Played),
+    Teams = n()
+  ) %>%
+  mutate(
+    Location = factor(Location),
+    Yellow_Cards_Per_Match = Yellow_Cards_Per_Match / max(Yellow_Cards_Per_Match),
+    Red_Cards_Per_Match = Red_Cards_Per_Match / max(Red_Cards_Per_Match),
+    Total_Cards_Per_Match = Total_Cards_Per_Match / max(Total_Cards_Per_Match)
+  )
+
+# Reshape data for heatmap
+heatmap_data <- disciplinary_data %>%
+  select(Location, Yellow_Cards_Per_Match, Red_Cards_Per_Match, Total_Cards_Per_Match) %>%
+  pivot_longer(cols = c(Yellow_Cards_Per_Match, Red_Cards_Per_Match, Total_Cards_Per_Match),
+               names_to = "Metric",
+               values_to = "Value") %>%
+  mutate(
+    Metric = factor(Metric, 
+                   levels = c("Yellow_Cards_Per_Match", "Red_Cards_Per_Match", "Total_Cards_Per_Match"),
+                   labels = c("Yellow Cards", "Red Cards", "Total Cards"))
+  )
+
+# Create heatmap
+ggplot(heatmap_data, aes(x = Metric, y = reorder(Location, -Value), fill = Value)) +
+  geom_tile(color = "white", size = 0.5) +
+  geom_text(aes(label = paste0(round(Value * 100), "%")), 
+            color = "black", size = 4) +
+  scale_fill_gradientn(
+    colors = c("#FFFFFF", "#FFD700", "#FFA500", "#FF0000"),
+    values = scales::rescale(c(0, 0.25, 0.5, 1)),
+    breaks = seq(0, 1, by = 0.25),
+    labels = scales::percent_format()
+  ) +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  ) +
+  labs(
+    title = "Disciplinary Heatmap by Location",
+    subtitle = "Normalized card rates across different cities (darker colors indicate higher rates)",
+    x = "Card Type",
+    y = "Location",
+    fill = "Normalized\nRate"
+  )
+```
+
+### Team Discipline Analysis
+
+```{r team-discipline, fig.width=12, fig.height=8}
+# Create team discipline data
+team_discipline <- team_stats %>%
+  left_join(stadiums, by = "Team") %>%
+  left_join(standings, by = "Team") %>%
+  mutate(
+    Cards_Per_Match = (Yellow_Cards + Red_Cards * 3) / Matches_Played,
+    Discipline_Score = 1 / (Cards_Per_Match + 0.1)
+  )
+
+# Create a bubble chart for team discipline
+ggplot(team_discipline, aes(x = Location, y = Cards_Per_Match, size = Discipline_Score, color = Team)) +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(3, 12),
+                       breaks = seq(0.2, 1, by = 0.2),
+                       labels = c("Low", "Medium-Low", "Medium", "Medium-High", "High"),
+                       name = "Discipline Level") +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  ) +
+  labs(
+    title = "Team Discipline Analysis",
+    subtitle = "Bubble size represents team discipline level (larger = more disciplined)",
+    x = "Location",
+    y = "Cards Per Match",
+    size = "Discipline Level"
+  )
+```
+
+## Comparison of Discipline & Success
+
+```{r discipline-success, fig.width=12, fig.height=8}
+# Create a visualization of card rates vs performance
+discipline_performance <- standings %>%
+  left_join(team_stats, by = "Team") %>%
+  mutate(
+    Card_Rate = (Yellow_Cards + Red_Cards * 3) / Matches_Played,
+    Points_Per_Match = Points / Matches_Played,
+    Discipline_Score = 1 / (Card_Rate + 0.1) # Inverse of card rate for better visualization
+  )
+
+# Create a scatter plot with regression line
+ggplot(discipline_performance, aes(x = Card_Rate, y = Points_Per_Match, 
+                                  size = Discipline_Score, color = Team)) +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = team_colors) +
+  scale_size_continuous(range = c(3, 12),
+                       breaks = seq(0.2, 1, by = 0.2),
+                       labels = c("Low", "Medium-Low", "Medium", "Medium-High", "High"),
+                       name = "Discipline Level") +
+  theme_jordan() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(
+    title = "Discipline vs. Performance Analysis",
+    subtitle = "Bubble size represents team discipline level (larger = more disciplined)\nCard rate includes yellow cards and red cards (weighted 3x)",
+    x = "Cards Per Match",
+    y = "Points Per Match",
+    color = "Team"
+  ) +
+  guides(
+    size = guide_legend(title = "Discipline Level",
+                       override.aes = list(color = "gray50")),
+    color = guide_legend(override.aes = list(size = 5))
+  )
+```
+
+## Stadium Capacity vs Performance Correlation
+
+```{r stadium-correlation, fig.width=12, fig.height=8}
+# Create visualization of stadium capacity vs team performance
+stadium_correlation <- stadiums %>%
+  left_join(standings, by = "Team") %>%
+  mutate(
+    Points_Per_Match = Points / Matches_Played,
+    Goals_Per_Match = Goals_Scored / Matches_Played
+  )
+
+# Create a scatter plot with stadium capacity
+ggplot(stadium_correlation, aes(x = Capacity, y = Points_Per_Match, color = Location)) +
+  geom_point(aes(size = Matches_Played), alpha = 0.8) +
+  geom_text_repel(aes(label = Team), size = 3, max.overlaps = 15) +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgray", linetype = "dashed", aes(group = 1)) +
+  scale_x_continuous(labels = comma) +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  ) +
+  labs(
+    title = "Stadium Capacity vs Team Performance",
+    subtitle = "Analyzing the relationship between infrastructure and results",
+    x = "Stadium Capacity",
+    y = "Points Per Match",
+    size = "Matches Played"
+  )
+```
